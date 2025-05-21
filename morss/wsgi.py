@@ -276,8 +276,11 @@ def cgi_handle_request():
     app = cgi_error_handler(app)
     app = cgi_encode(app)
 
-    wsgiref.handlers.CGIHandler().run(app)
-
+#    wsgiref.handlers.CGIHandler().run(app) -- replaced by
+from wsgiref.simple_server import make_server
+if __name__ == '__main__':
+    httpd = make_server('localhost', 8000, app)
+    httpd.serve_forever()
 
 class WSGIRequestHandlerRequestUri(wsgiref.simple_server.WSGIRequestHandler):
     def get_environ(self):
