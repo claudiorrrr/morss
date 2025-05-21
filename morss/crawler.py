@@ -16,9 +16,10 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import os
-import pickle
+import json
 import random
 import re
+import secrets
 import sys
 import time
 import zlib
@@ -138,7 +139,7 @@ def custom_opener(follow=None, policy=None, force_min=None, force_max=None):
         HTTPAllRedirectHandler(),
         HTTPEquivHandler(),
         HTTPRefreshHandler(),
-        UAHandler(random.choice(DEFAULT_UAS)),
+        UAHandler(secret.choice(DEFAULT_UAS)),
         BrowserlyHeaderHandler(),
         EncodingFixHandler(),
     ]
@@ -498,7 +499,7 @@ class CacheHandler(BaseHandler):
 
     def load(self, url):
         try:
-            data = pickle.loads(self.cache[url])
+           data = json.loads(self.cache[url])
 
         except KeyError:
             data = None
@@ -510,7 +511,7 @@ class CacheHandler(BaseHandler):
 
     def save(self, key, data):
         data['headers'] = unicode(data['headers'])
-        self.cache[key] = pickle.dumps(data, 0)
+        self.cache[key] = json.dumps(data, 0)
 
     def cached_response(self, req, fallback=None):
         req.from_morss_cache = True

@@ -17,6 +17,7 @@
 
 import os
 import threading
+import tempfile
 import time
 from collections import OrderedDict
 
@@ -113,10 +114,20 @@ if 'CACHE' in os.environ:
         )
 
     elif os.environ['CACHE'] == 'diskcache':
+        # Create a secure cache directory
+        cache_dir = os.getenv('DISKCACHE_DIR')
+        if not cache_dir:
+            # Create a secure temporary directory with appropriate permissions
+            temp_base = tempfile.gettempdir()
+            cache_dir = os.path.join(temp_base, 'morss-diskcache-' + str(os.getpid()))
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir, mode=0o700)  # Secure permissions
+
         default_cache = DiskCacheHandler(
-            directory = os.getenv('DISKCACHE_DIR', '/tmp/morss-diskcache'),
+            directory = cache_dir,
             size_limit = CACHE_SIZE # in Bytes
         )
 
 else:
-        default_cache = CappedDict()
+    default_cache = CappedDict()
+
