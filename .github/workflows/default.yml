@@ -1,0 +1,78 @@
+name: default
+on:
+    push:
+        branches:
+            - master
+
+jobs:
+    test-lint:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+              with:
+                  fetch-depth: 0
+
+            - name: Prepare image
+              run: apt-get -y update && apt-get -y install python3-pip libenchant-2-2 aspell-en
+
+            - name: Install dependencies
+              run: pip3 install .[full] .[dev]
+            - run: isort --check-only --diff .
+            - run: pylint morss --rcfile=.pylintrc --disable=C,R,W --fail-under=8
+            - run: pytest --cov=morss tests
+
+    python-publish:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+              with:
+                  fetch-depth: 0
+
+            - name: Prepare image
+              run: apt-get -y update && apt-get -y install python3-pip python3-build
+
+            - name: Build package
+              run: python3 -m build
+
+            - name: Publish package
+              uses: https://github.com/pypa/gh-action-pypi-publish@release/v1
+              with:
+                  password: ${{ secrets.pypi_api_token }}
+
+    docker-publish-deploy:
+        runs-on: ubuntu-latest
+        container:
+            image: catthehacker/ubuntu:act-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Set up QEMU
+              uses: https://github.com/docker/setup-qemu-action@v2
+
+            - name: Set up Docker Buildx
+              uses: https://github.com/docker/setup-buildx-action@v2
+
+            - name: Login to Docker Hub
+              uses: https://github.com/docker/login-action@v2
+              with:
+                  username: ${{ secrets.docker_user }}
+                  password: ${{ secrets.docker_pwd }}
+
+            - name: Build and push
+              uses: https://github.com/docker/build-push-action@v4
+              with:
+                  context: .
+                  platforms: linux/amd64,linux/arm64,linux/arm/v7
+                  push: true
+                  tags: ${{ secrets.docker_repo }}
+
+            - name: Deploy on server
+              uses: https://github.com/appleboy/ssh-action@v0.1.10
+              with:
+                  host: ${{ secrets.ssh_host }}
+                  username: ${{ secrets.ssh_user }}
+                  key: ${{ secrets.ssh_key }}
+                  script: morss-update
