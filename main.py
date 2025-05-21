@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import os
+# Set debug environment variable
+os.environ['DEBUG'] = 'True'
 
 # This file is part of morss
 #

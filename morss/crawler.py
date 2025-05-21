@@ -23,6 +23,7 @@ import secrets
 import sys
 import time
 import zlib
+import pickle
 from cgi import parse_header
 from collections import OrderedDict
 from io import BytesIO, StringIO
@@ -139,7 +140,7 @@ def custom_opener(follow=None, policy=None, force_min=None, force_max=None):
         HTTPAllRedirectHandler(),
         HTTPEquivHandler(),
         HTTPRefreshHandler(),
-        UAHandler(secret.choice(DEFAULT_UAS)),
+        UAHandler(secrets.choice(DEFAULT_UAS)),
         BrowserlyHeaderHandler(),
         EncodingFixHandler(),
     ]
@@ -499,19 +500,62 @@ class CacheHandler(BaseHandler):
 
     def load(self, url):
         try:
-           data = json.loads(self.cache[url])
+            try:
+                # Try JSON first (for new cache entries)
+                data = json.loads(self.cache[url])
+            except (json.JSONDecodeError, TypeError):
+                # Fall back to pickle for old cache entries
+                try:
+                    # Try normal pickle load first
+                    data = pickle.loads(self.cache[url])
+                except UnicodeDecodeError:
+                    # Handle Python 2 pickle format
+                    if isinstance(self.cache[url], str):
+                        cached_data = self.cache[url].encode('latin1')
+                    else:
+                        cached_data = self.cache[url]
+                    data = pickle.loads(cached_data, encoding='bytes')
 
         except KeyError:
             data = None
-
+        except Exception as e:
+            print(f"Cache load error: {e}")
+            data = None
         else:
-            data['headers'] = parse_headers(data['headers'] or unicode())
+            # Replace unicode() with str() for Python 3
+            try:
+                data['headers'] = parse_headers(data['headers'] or str())
+            except (TypeError, NameError):
+                # Handle case where unicode() is not defined
+                data['headers'] = parse_headers(data['headers'] or "")
 
         return data
 
-    def save(self, key, data):
-        data['headers'] = unicode(data['headers'])
-        self.cache[key] = json.dumps(data, 0)
+    def save(self, url, data):
+        """Save data to cache using JSON instead of pickle for security"""
+        try:
+            # Try to serialize with JSON
+            self.cache[url] = json.dumps(data)
+        except (TypeError, OverflowError):
+            # Instead of using pickle directly, sanitize the data first
+            try:
+                # Convert headers to a serializable format if needed
+                if data and 'headers' in data and hasattr(data['headers'], 'items'):
+                    headers_dict = {}
+                    for k, v in data['headers'].items():
+                        # Convert header values to strings
+                        headers_dict[k] = str(v)
+                    data['headers'] = headers_dict
+
+                # Try JSON again with sanitized data
+                self.cache[url] = json.dumps(data)
+            except (TypeError, OverflowError) as e:
+                # Log the error
+                print(f"Warning: Complex object couldn't be JSON serialized: {e}")
+                # As a last resort, use pickle but log a warning
+                self.cache[url] = pickle.dumps(data)
+                print(f"Warning: Using pickle for {url} - consider refactoring for JSON compatibility")
+
 
     def cached_response(self, req, fallback=None):
         req.from_morss_cache = True

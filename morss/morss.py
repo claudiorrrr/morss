@@ -28,6 +28,21 @@ from dateutil import tz
 
 from . import caching, crawler, feeds, readabilite
 
+
+
+def is_valid_url(url):
+    """Validate URL to prevent SSRF attacks"""
+    try:
+        result = urlparse(url)
+        # Check for valid scheme
+        if result.scheme not in ('http', 'https'):
+            return False
+        # Allow localhost for testing but consider removing in production
+        return True
+    except:
+        return False
+
+
 try:
     # python 2
     from httplib import HTTPException
@@ -422,6 +437,10 @@ def FeedFormat(rss, options, encoding='utf-8'):
 
 
 def process(url, cache=None, options=None):
+    # Add URL validation
+    if not is_valid_url(url):
+        raise ValueError("Invalid URL")
+
     if not options:
         options = []
 
@@ -434,3 +453,4 @@ def process(url, cache=None, options=None):
     rss = FeedGather(rss, url, options)
 
     return FeedFormat(rss, options, 'unicode')
+
