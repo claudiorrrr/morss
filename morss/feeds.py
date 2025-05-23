@@ -324,7 +324,14 @@ class ParserXML(ParserBase):
         'rssfake': 'http://purl.org/rss/1.0/'}
 
     def parse(self, raw):
-        parser = etree.XMLParser(recover=True, remove_blank_text=True, remove_pis=True) # remove_blank_text needed for pretty_print
+        parser = etree.XMLParser(
+            recover=True,
+            remove_blank_text=True,
+            remove_pis=True,
+            resolve_entities=False,  # Prevent XXE
+            no_network=True,         # Prevent XXE
+            dtd_validation=False     # Prevent XXE
+        )
         return etree.fromstring(raw, parser)
 
     def remove(self):
