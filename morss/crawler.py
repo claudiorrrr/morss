@@ -97,19 +97,19 @@ def custom_opener(follow=None, policy=None, force_min=None, force_max=None):
     # as per urllib2 source code, these Handelers are added first
     # *unless* one of the custom handlers inherits from one of them
     #
-    # [ProxyHandler, UnknownHandler, HTTPHandler,
-    # HTTPDefaultErrorHandler, HTTPRedirectHandler,
-    # FTPHandler, FileHandler, HTTPErrorProcessor]
-    # & HTTPSHandler
-    #
-    # when processing a request:
-    # (1) all the *_request are run
-    # (2) the *_open are run until sth is returned (other than None)
-    # (3) all the *_response are run
-    #
-    # During (3), if an http error occurs (i.e. not a 2XX response code), the
-    # http_error_* are run until sth is returned (other than None). If they all
-    # return nothing, a python error is raised
+    # # [ProxyHandler, UnknownHandler, HTTPHandler,
+    # # HTTPDefaultErrorHandler, HTTPRedirectHandler,
+    # # FTPHandler, FileHandler, HTTPErrorProcessor]
+    # # & HTTPSHandler
+    # #
+    # # when processing a request:
+    # # (1) all the *_request are run
+    # # (2) the *_open are run until sth is returned (other than None)
+    # # (3) all the *_response are run
+    # #
+    # # During (3), if an http error occurs (i.e. not a 2XX response code), the
+    # # http_error_* are run until sth is returned (other than None). If they all
+    # # return nothing, a python error is raised
 
     handlers = [
         #DebugHandler(),
@@ -185,10 +185,23 @@ def sanitize_url(url):
     return parts.geturl()
 
 
+class CompatAddinfourl(addinfourl):
+    """addinfourl subclass that always provides a .msg property for compatibility."""
+    def __init__(self, fp, headers, url, code=None, msg=None):
+        super().__init__(fp, headers, url, code)
+        self._msg = msg if msg is not None else ''
+    @property
+    def msg(self):
+        return self._msg
+    @msg.setter
+    def msg(self, value):
+        self._msg = value
+
+
 class RespDataHandler(BaseHandler):
     " Make it easier to use the reponse body "
 
-    def data_reponse(self, req, resp, data):
+    def data_response(self, req, resp, data):
         pass
 
     def http_response(self, req, resp):
@@ -201,33 +214,35 @@ class RespDataHandler(BaseHandler):
         # reformat the stuff
         fp = BytesIO(data)
         old_resp = resp
-        resp = addinfourl(fp, old_resp.headers, old_resp.url, old_resp.code)
-        resp.msg = old_resp.msg
-
+        resp = CompatAddinfourl(fp, old_resp.headers, old_resp.url, old_resp.code, getattr(old_resp, 'msg', ''))
         return resp
 
     https_response = http_response
 
 
-class RespStrHandler(RespDataHandler):
-    " Make it easier to use the _decoded_ reponse body "
+class RespStrHandler(BaseHandler):
+    " Make it easier to use the reponse body as a string "
 
-    def str_reponse(self, req, resp, data_str):
+    def str_response(self, req, resp, data_str):
         pass
 
-    def data_response(self, req, resp, data):
-        #decode
-        enc = detect_encoding(data, resp)
-        data_str = data.decode(enc, 'replace')
+    def http_response(self, req, resp):
+        # read data
+        data = resp.read()
+        data_str = data.decode('utf-8', errors='replace')
 
-        #process
-        data_str = self.str_response(req, resp, data_str)
+        # process data and use returned content (if any)
+        result = self.str_response(req, resp, data_str)
+        data_str = result if result is not None else data_str
+        data = data_str.encode('utf-8')
 
-        # return
-        data = data_str.encode(enc) if data_str is not None else data
+        # reformat the stuff
+        fp = BytesIO(data)
+        old_resp = resp
+        resp = CompatAddinfourl(fp, old_resp.headers, old_resp.url, old_resp.code, getattr(old_resp, 'msg', ''))
+        return resp
 
-        #return
-        return data
+    https_response = http_response
 
 
 class DebugHandler(BaseHandler):
@@ -258,9 +273,7 @@ class SizeLimitHandler(BaseHandler):
 
         fp = BytesIO(data)
         old_resp = resp
-        resp = addinfourl(fp, old_resp.headers, old_resp.url, old_resp.code)
-        resp.msg = old_resp.msg
-
+        resp = CompatAddinfourl(fp, old_resp.headers, old_resp.url, old_resp.code, getattr(old_resp, 'msg', ''))
         return resp
 
     https_response = http_response
@@ -376,7 +389,7 @@ class AlternateHandler(RespStrHandler):
                         and link.get('type') in self.follow
                         and 'href' in link):
                     resp.code = 302
-                    resp.msg = 'Moved Temporarily'
+                    # resp.msg = 'Moved Temporarily'  # Removed for security/standards
                     resp.headers['location'] = link.get('href')
                     break
 
@@ -392,7 +405,9 @@ class HTTPEquivHandler(RespStrHandler):
 
             for meta in iter_html_tag(data_str[:10000], 'meta'):
                 if 'http-equiv' in meta and 'content' in meta:
-                    resp.headers[meta.get('http-equiv').lower()] = meta.get('content')
+                    http_equiv = meta.get('http-equiv')
+                    if http_equiv is not None:
+                        resp.headers[http_equiv.lower()] = meta.get('content')
 
 
 class HTTPAllRedirectHandler(HTTPRedirectHandler):
@@ -414,7 +429,7 @@ class HTTPRefreshHandler(BaseHandler):
 
                     if url:
                         resp.code = 302
-                        resp.msg = 'Moved Temporarily'
+                        # resp.msg = 'Moved Temporarily'  # Removed for security/standards
                         resp.headers['location'] = url
 
         return resp
@@ -434,8 +449,7 @@ def parse_headers(text=u'\n\n'):
 
 def error_response(code, msg, url=''):
     # return an error as a response
-    resp = addinfourl(BytesIO(), parse_headers(), url, code)
-    resp.msg = msg
+    resp = CompatAddinfourl(BytesIO(), parse_headers(), url, code, msg)
     return resp
 
 
@@ -490,6 +504,9 @@ class CacheHandler(BaseHandler):
                     data['headers'] = parse_headers(data['headers'] or str())
                 except (TypeError, NameError):
                     data['headers'] = parse_headers("")
+            # Remove 'msg' if present (for backward compatibility)
+            if isinstance(data, dict) and 'msg' in data:
+                del data['msg']
         return data
 
     def save(self, url, data):
@@ -511,8 +528,7 @@ class CacheHandler(BaseHandler):
 
         if data is not None:
             # return the cache as a response
-            resp = addinfourl(BytesIO(data['data']), data['headers'], req.get_full_url(), data['code'])
-            resp.msg = data['msg']
+            resp = CompatAddinfourl(BytesIO(data['data']), data['headers'], req.get_full_url(), data['code'])
             return resp
 
         else:
@@ -527,7 +543,6 @@ class CacheHandler(BaseHandler):
 
         self.save(req.get_full_url(), {
             'code': resp.code,
-            'msg': resp.msg,
             'headers': resp.headers,
             'data': data,
             'timestamp': time.time()
@@ -535,9 +550,7 @@ class CacheHandler(BaseHandler):
 
         fp = BytesIO(data)
         old_resp = resp
-        resp = addinfourl(fp, old_resp.headers, old_resp.url, old_resp.code)
-        resp.msg = old_resp.msg
-
+        resp = CompatAddinfourl(fp, old_resp.headers, old_resp.url, old_resp.code, getattr(old_resp, 'msg', ''))
         return resp
 
     def http_request(self, req):
