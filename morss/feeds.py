@@ -32,21 +32,8 @@ from .util import *
 
 json.encoder.c_make_encoder = None
 
-try:
-    # python 2
-    from ConfigParser import RawConfigParser
-    from StringIO import StringIO
-except ImportError:
-    # python 3
-    from configparser import RawConfigParser
-    from io import StringIO
-
-try:
-    # python 2
-    basestring
-except NameError:
-    # python 3
-    basestring = unicode = str
+from configparser import RawConfigParser
+from io import StringIO
 
 
 def parse_rules(filename=None):
