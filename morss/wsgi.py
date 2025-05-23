@@ -25,13 +25,7 @@ import wsgiref.simple_server
 import wsgiref.util
 
 import lxml.etree
-
-try:
-    # python 2
-    from urllib import unquote
-except ImportError:
-    # python 3
-    from urllib.parse import unquote
+from urllib.parse import unquote
 
 from . import caching, crawler, readabilite
 from .morss import (DELAY, TIMEOUT, FeedFetch, FeedFormat, FeedGather,
