@@ -23,19 +23,38 @@ import secrets
 import sys
 import time
 import zlib
-from cgi import parse_header
 from collections import OrderedDict
 from io import BytesIO, StringIO
-
-import chardet
-
-from .caching import default_cache
-from email import message_from_string
+from io import IOBase
 from http.client import HTTPMessage
 from urllib.parse import quote, urlsplit
 from urllib.request import (BaseHandler, HTTPCookieProcessor,
-                            HTTPRedirectHandler, Request, addinfourl,
+                            HTTPRedirectHandler, Request,
                             build_opener, parse_http_list, parse_keqv_list)
+from .caching import default_cache
+import chardet
+from email import message_from_string
+
+class CompatAddinfourl(IOBase):
+    """Minimal replacement for addinfourl, always provides .msg property."""
+    def __init__(self, fp, headers, url, code=None, msg=None):
+        self.fp = fp
+        self.headers = headers if headers is not None else HTTPMessage()
+        self.url = url
+        self.code = code
+        self._msg = msg if msg is not None else ''
+    def read(self, *args, **kwargs):
+        return self.fp.read(*args, **kwargs)
+    def info(self):
+        return self.headers
+    def geturl(self):
+        return self.url
+    @property
+    def msg(self):
+        return self._msg
+    @msg.setter
+    def msg(self, value):
+        self._msg = value
 
 MIMETYPE = {
     'xml': ['text/xml', 'application/xml', 'application/rss+xml', 'application/rdf+xml', 'application/atom+xml', 'application/xhtml+xml'],
@@ -171,31 +190,21 @@ def sanitize_url(url):
 
     # escape non-ascii unicode characters
     parts = urlsplit(url)
-
-    parts = parts._replace(
-        netloc=parts.netloc.replace(
+    if parts.hostname:
+        netloc = parts.netloc.replace(
             parts.hostname,
             parts.hostname.encode('idna').decode('ascii')
-            ),
+        )
+    else:
+        netloc = parts.netloc
+    parts = parts._replace(
+        netloc=netloc,
         path=soft_quote(parts.path),
         query=soft_quote(parts.query),
         fragment=soft_quote(parts.fragment),
     )
 
     return parts.geturl()
-
-
-class CompatAddinfourl(addinfourl):
-    """addinfourl subclass that always provides a .msg property for compatibility."""
-    def __init__(self, fp, headers, url, code=None, msg=None):
-        super().__init__(fp, headers, url, code)
-        self._msg = msg if msg is not None else ''
-    @property
-    def msg(self):
-        return self._msg
-    @msg.setter
-    def msg(self, value):
-        self._msg = value
 
 
 class RespDataHandler(BaseHandler):
@@ -312,9 +321,16 @@ def detect_raw_encoding(data, resp=None):
         if enc is not None:
             return enc
 
-        enc = parse_header(resp.headers.get('content-type', ''))[1].get('charset')
-        if enc is not None:
-            return enc
+        # Safely parse charset from Content-Type header
+        content_type = resp.headers.get('content-type', '')
+        charset = None
+        for part in content_type.split(';'):
+            part = part.strip()
+            if part.lower().startswith('charset='):
+                charset = part.split('=', 1)[1].strip('"\'')
+                break
+        if charset:
+            return charset
 
     match = re.search(b'charset=["\']?([0-9a-zA-Z-]+)', data[:1000])
     if match:
