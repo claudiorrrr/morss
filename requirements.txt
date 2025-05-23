@@ -1,0 +1,4 @@
+lxml
+chardet
+python-dateutil
+bs4
