@@ -30,32 +30,12 @@ from io import BytesIO, StringIO
 import chardet
 
 from .caching import default_cache
-
-try:
-    # python 2
-    from urllib import quote
-
-    from httplib import HTTPMessage
-    from urllib2 import (BaseHandler, HTTPCookieProcessor, HTTPRedirectHandler,
-                         Request, addinfourl, build_opener, parse_http_list,
-                         parse_keqv_list)
-    from urlparse import urlsplit
-except ImportError:
-    # python 3
-    from email import message_from_string
-    from http.client import HTTPMessage
-    from urllib.parse import quote, urlsplit
-    from urllib.request import (BaseHandler, HTTPCookieProcessor,
-                                HTTPRedirectHandler, Request, addinfourl,
-                                build_opener, parse_http_list, parse_keqv_list)
-
-try:
-    # python 2
-    basestring
-except NameError:
-    # python 3
-    basestring = unicode = str
-
+from email import message_from_string
+from http.client import HTTPMessage
+from urllib.parse import quote, urlsplit
+from urllib.request import (BaseHandler, HTTPCookieProcessor,
+                            HTTPRedirectHandler, Request, addinfourl,
+                            build_opener, parse_http_list, parse_keqv_list)
 
 MIMETYPE = {
     'xml': ['text/xml', 'application/xml', 'application/rss+xml', 'application/rdf+xml', 'application/atom+xml', 'application/xhtml+xml'],
