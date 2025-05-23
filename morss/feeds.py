@@ -34,6 +34,7 @@ json.encoder.c_make_encoder = None
 
 from configparser import RawConfigParser
 from io import StringIO
+import os
 
 
 def parse_rules(filename=None):
@@ -47,16 +48,30 @@ def parse_rules(filename=None):
 
     for section in rules.keys():
         # for each ruleset
-
         for arg in rules[section].keys():
             # for each rule
-
             if rules[section][arg].startswith('file:'):
-                path = data_path('www', rules[section][arg][5:])
-                file_raw = open(path).read()
-                file_clean = re.sub('<[/?]?(xsl|xml)[^>]+?>', '', file_raw)
-                rules[section][arg] = file_clean
-
+                rel_path = rules[section][arg][5:]
+                # Prevent directory traversal
+                if '..' in rel_path or rel_path.startswith('/') or rel_path.startswith('\\'):
+                    print(f"[SECURITY] Blocked unsafe file path in rules: {rel_path}")
+                    rules[section][arg] = ''
+                    continue
+                path = data_path('www', rel_path)
+                try:
+                    # Ensure the file is within the www directory
+                    www_dir = os.path.abspath(data_path('www'))
+                    abs_path = os.path.abspath(path)
+                    if not abs_path.startswith(www_dir):
+                        print(f"[SECURITY] Blocked file read outside www/: {abs_path}")
+                        rules[section][arg] = ''
+                        continue
+                    file_raw = open(abs_path).read()
+                    file_clean = re.sub('<[/?]?(xsl|xml)[^>]+?>', '', file_raw)
+                    rules[section][arg] = file_clean
+                except Exception as e:
+                    print(f"[SECURITY] Failed to read file {path}: {e}")
+                    rules[section][arg] = ''
             elif '\n' in rules[section][arg]:
                 rules[section][arg] = rules[section][arg].split('\n')[1:]
 
